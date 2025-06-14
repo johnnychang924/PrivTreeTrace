@@ -82,7 +82,11 @@ class Trajectory:
             return
         # dict1 仍然可能是 real_subcell_index_to_usable_index_dict，需做兼容
         if dict1 is not None:
-            sequence = np.array([dict1.get(idx, idx) for idx in sequence])
+            if isinstance(dict1, dict):
+                sequence = np.vectorize(lambda x: dict1.get(x, x))(sequence)
+            else:
+                # 直接 identity mapping，或直接不轉換
+                sequence = sequence.copy()
         unrepeated_sequence, frequency = self.calculate_unrepeated_trajectory(sequence)
         self.unrepeated_sequence = unrepeated_sequence
         self.frequency = frequency

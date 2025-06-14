@@ -58,6 +58,9 @@ class MarkovModel:
         trajectory_array = trajectory1.usable_simple_sequence
         markov_matrix = np.zeros((state_number, state_number))
         trajectory_length = trajectory_array.size
+        if trajectory_array is None or len(trajectory_array) == 0:
+            print("SKIP: empty trajectory_array in trajectory_markov_probability")
+            return np.zeros((state_number, state_number))  # 直接回傳零矩陣
         for markov_transform_start in range(trajectory_length - 1):
             this_step_start_state = trajectory_array[markov_transform_start]
             this_step_end_state = trajectory_array[markov_transform_start + 1]
@@ -65,12 +68,11 @@ class MarkovModel:
         transition_number_of_trajectory = trajectory_length + 1
         if transition_number_of_trajectory < 1:
             transition_number_of_trajectory = 1
-
         real_start_state = trajectory_array[0]
         real_end_state = trajectory_array[-1]
         markov_matrix[start_state, real_start_state] = 1
         markov_matrix[real_end_state, end_state] = 1
-        
+
         markov_matrix = markov_matrix / transition_number_of_trajectory
 
         return markov_matrix

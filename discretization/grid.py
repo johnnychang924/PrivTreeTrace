@@ -858,6 +858,16 @@ class Grid:
 
     #
     def usable_state_central_points(self):
+        # 如果有 privtree_leaf_regions，就走 PrivTree 路徑
+        if hasattr(self, 'privtree_leaf_regions'):
+            centers = []
+            for r in self.privtree_leaf_regions:
+                # [xmin, xmax, ymin, ymax]
+                xc = (r[0] + r[1]) / 2
+                yc = (r[2] + r[3]) / 2
+                centers.append([yc, xc])  # lat, lon
+            return np.array(centers)
+
         state_number = self.usable_state_number
         central_points_gps = np.zeros((state_number, 2)) - 1
         for usable_state_index in range(state_number):
@@ -1000,6 +1010,8 @@ class Grid:
         self.usable_state_centers = np.array([
             [(r[2]+r[3])/2, (r[0]+r[1])/2] for r in leaf_regions
         ])
+        self.level2_borders = np.array(self.privtree_leaf_regions)
+
         # Map trajectory points to states (leaf cells)
         def find_leaf_index(x, y):
             for idx, reg in enumerate(leaf_regions):
@@ -1010,16 +1022,26 @@ class Grid:
         for tr in trajectory_set1.trajectory_list:
             pts = tr.trajectory_array
             tr.usable_sequence = np.array([find_leaf_index(x, y) for x, y in pts])
+            tr.usable_simple_sequence = tr.usable_sequence
         self.subcell_number = self.usable_state_number
         n = self.usable_state_number
+        self.real_subcell_index_to_usable_index_dict = np.arange(n)
+        self.usable_subcell_index_to_real_index_dict = np.arange(n)
+        self.level2_subcell_to_large_cell_dict = np.arange(n)
+        self.level2_subdividing_parameter = np.ones(n, dtype=int)
+        n1 = self.usable_state_number
+        self.level1_cell_position = np.array([[i, 0] for i in range(n1)])  # N x 2 dummy
+        self.level1_cell_number = n1
+        self.compute_privtree_neighbors()
 
     def set_up_state(self, trajectory_set1: TrajectorySet) -> None:
-        self.get_non_noisy_level2_density(trajectory_set1)
-        # self.get_noisy_level2_density()
-        self.state_pruning()
-        self.usable_array_of_set(trajectory_set1)
-        self.construct_real_index_neighbors()
-        self.construct_usable_index_neighbors()
+        # self.get_non_noisy_level2_density(trajectory_set1)
+        # # self.get_noisy_level2_density()
+        # self.state_pruning()
+        # self.usable_array_of_set(trajectory_set1)
+        # self.construct_real_index_neighbors()
+        # self.construct_usable_index_neighbors()
+        pass
 
     def compute_privtree_neighbors(self):
         # 每個region如果有共邊界即視為neighbor

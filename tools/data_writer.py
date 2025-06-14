@@ -7,7 +7,7 @@ from os import walk
 import datetime
 import config.folder_and_file_names as config
 import os
-import fcntl
+from tools.fcntl import fcntl
 
 
 class DataWriter:
