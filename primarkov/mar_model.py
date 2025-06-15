@@ -107,6 +107,9 @@ class MarkovModel:
         noisy_markov[self.end_state_index, :] = np.zeros(self.all_state_number)
         noisy_markov[self.start_state_index, self.end_state_index] = 0
         noisy_markov = noise1.positive_regulation_for_markov_matrix(noisy_markov, 'queue_minus')
+        print("=== Noisy Markov Matrix (before mask/normalization) ===")
+        print(noisy_markov)
+        np.savetxt("noisy_markov_before_mask.txt", noisy_markov, fmt="%.4f")
         self.noisy_markov_matrix = noisy_markov
 
     #
@@ -335,6 +338,7 @@ class MarkovModel:
         self.give_neighboring_matrix(grid)
         self.calculate_markov_probability(trajectory_set1)
         self.noisy_markov()
+
         pass
 
     #

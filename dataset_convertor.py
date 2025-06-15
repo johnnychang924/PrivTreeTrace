@@ -1,9 +1,9 @@
 import glob
 import os
 
-folder_path = "/home/johnnychang/下載/Geolife Trajectories 1.3/Data"
-output_trace = "./datasets/simple_example.dat"
-max_data_per_people = 600
+folder_path = "E:/privacy_info/Geolife Trajectories 1.3/Data"
+output_trace = "E:/privacy_info/PrivTreeTrace/simple_example.dat"
+max_data_per_people = 100
 
 with open(output_trace, "w") as output:
     for person_id in range(182):
