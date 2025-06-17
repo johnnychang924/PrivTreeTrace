@@ -961,7 +961,8 @@ class Grid:
         privtree_epsilon = level1_epsilon / max_depth  # divide epsilon for each split step
         border = self.get_border('all')
         region = [border[2], border[3], border[1], border[0]]  # [xmin, xmax, ymin, ymax]
-
+        np.random.seed(42)  # for reproducibility
+        random_sensitive_indices = set(np.random.choice(1024, 8, replace=False))  # e.g. 64格挑8格敏感
         def privtree_split(points, region, depth):
             print(f"[DEBUG] privtree_split: depth={depth}, n_points={len(points)}, region={region}")
             # 僅極端大區域才強制分割（如大於全體/8）
@@ -977,7 +978,11 @@ class Grid:
             if len(points) > force_split_threshold:
                 print(f"  [DEBUG] FORCE split: n_points > force_split_threshold ({force_split_threshold})")
             else:
-                noisy_count = len(points) + np.random.laplace(scale=1.0 / privtree_epsilon)
+                local_epsion = privtree_epsilon
+                region_index = len(leaf_regions)
+                if region_index in random_sensitive_indices:
+                    local_epsilon = privtree_epsilon * 5  # 給敏感區較高 epsilon（較小 noise）
+                noisy_count = len(points) + np.random.laplace(scale=1.0 / local_epsion)
                 if noisy_count <= min_cell_points:
                     print(f"  [DEBUG] STOP: noisy_count <= min_cell_points ({min_cell_points})")
                     return [region]
