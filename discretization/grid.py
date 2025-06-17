@@ -6,7 +6,8 @@ from tools.noise import Noise
 from tools.general_tools import GeneralTools
 from discretization.divide import Divide
 import copy as cop
-
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 class Grid:
 
@@ -940,6 +941,28 @@ class Grid:
                 in_border_states.append(state_index)
         return in_border_states
 
+    def plot_privtree_regions(grid, trajectory_set, figsize=(8, 8)):
+        fig, ax = plt.subplots(figsize=figsize)
+        regions = grid.privtree_leaf_regions
+        for reg in regions:
+            xmin, xmax, ymin, ymax = reg
+            rect = patches.Rectangle(
+                (xmin, ymin), xmax - xmin, ymax - ymin,
+                linewidth=1, edgecolor='blue', facecolor='none', alpha=0.5
+            )
+            ax.add_patch(rect)
+        # 疊加所有點
+        for tr in trajectory_set.trajectory_list:
+            x = tr.trajectory_array[:, 0]
+            y = tr.trajectory_array[:, 1]
+            ax.plot(x, y, '.', color='red', markersize=10, alpha=0.6)
+        ax.set_xlim(min(r[0] for r in regions), max(r[1] for r in regions))
+        ax.set_ylim(min(r[2] for r in regions), max(r[3] for r in regions))
+        ax.set_aspect('equal')
+        ax.set_title("PrivTree Grid + Trajectory Points")
+        plt.xlabel('Longitude (X)')
+        plt.ylabel('Latitude (Y)')
+        plt.show()
     def get_grid(self, trajectory_set1: TrajectorySet) -> None:
         """
         使用 PrivTree-style 遞迴 grid 分割，支援敏感區域 lambda 動態調整。
@@ -948,7 +971,7 @@ class Grid:
         total_epsilon = cc1.total_epsilon
         level1_epsilon_partition = cc1.epsilon_partition[0]
         level1_epsilon = total_epsilon * level1_epsilon_partition
-
+        delta=1.8
         self.border(trajectory_set1)
         self.give_point_number(trajectory_set1)
 
@@ -956,80 +979,59 @@ class Grid:
         print("[DEBUG] first trajectory shape:", trajectory_set1.trajectory_list[0].trajectory_array.shape)
         all_points = np.vstack([tr.trajectory_array for tr in trajectory_set1.trajectory_list])
         print("[DEBUG] all_points shape:", all_points.shape)
-        min_cell_points = getattr(self.cc, 'privtree_min_points', 500)
-        max_depth = getattr(self.cc, 'privtree_max_depth', 10)
-        privtree_epsilon = level1_epsilon / max_depth
+        min_cell_points = 1000 #getattr(self.cc, 'privtree_min_points', 1000)
+        max_depth = 1000 #getattr(self.cc, 'privtree_max_depth', 10)
+        privtree_epsilon = level1_epsilon
         border = self.get_border('all')
         region = [border[2], border[3], border[1], border[0]]  # [xmin, xmax, ymin, ymax]
 
         # --- 隨機挑選敏感格子 index ---
         np.random.seed(42)
-        guess_grid_num = 2 ** max_depth  # 例如 max_depth=6，約 64 個 leaf
-        sensitive_cnt = min(8, guess_grid_num)
-        random_sensitive_indices = set(np.random.choice(guess_grid_num, sensitive_cnt, replace=False))
+#        guess_grid_num = 2 ** max_depth  # 例如 max_depth=6，約 64 個 leaf
+#        sensitive_cnt = min(8, guess_grid_num)
+#        random_sensitive_indices = set(np.random.choice(guess_grid_num, sensitive_cnt, replace=False))
         # 若 leaf 數不足 guess_grid_num，沒關係只會少一點敏感格
 
         leaf_regions = []  # 以閉包方式維護當前遞迴序列
 
         def privtree_split(points, region, depth):
-            # region: [xmin, xmax, ymin, ymax]
-            # points: [N, 2]
             nonlocal leaf_regions
             print(f"[DEBUG] privtree_split: depth={depth}, n_points={len(points)}, region={region}")
-            force_split_threshold = int(0.12 * all_points.shape[0])
+            c_v = len(points)
             if depth >= max_depth:
                 leaf_regions.append(region)
-                print(f"  [DEBUG] STOP: reach max_depth {max_depth}")
+                print("reach max depth")
                 return
-            if len(points) <= min_cell_points:
+            if c_v <= min_cell_points:
                 leaf_regions.append(region)
-                print(f"  [DEBUG] STOP: n_points <= min_cell_points ({min_cell_points})")
                 return
-            # DP/noise 決策
-            if len(points) > force_split_threshold:
-                print(f"  [DEBUG] FORCE split: n_points > force_split_threshold ({force_split_threshold})")
-            else:
-                region_index = len(leaf_regions)
-                local_epsilon = privtree_epsilon
-                # 敏感區高 epsilon（噪聲小，保障重要格子準確度）
-                if region_index in random_sensitive_indices:
-                    local_epsilon = privtree_epsilon * 5
-                noisy_count = len(points) + np.random.laplace(scale=1.0 / local_epsilon)
-                if noisy_count <= min_cell_points:
-                    leaf_regions.append(region)
-                    print(f"  [DEBUG] STOP: noisy_count <= min_cell_points ({min_cell_points})")
-                    return
-            # 遞迴中位數切割
-            x_width = region[1] - region[0]
-            y_width = region[3] - region[2]
-            if x_width >= y_width:
-                split_dim = 0
-                mid = np.median([pt[0] for pt in points])
-                left_region = [region[0], mid, region[2], region[3]]
-                right_region = [mid, region[1], region[2], region[3]]
-            else:
-                split_dim = 2
-                mid = np.median([pt[1] for pt in points])
-                left_region = [region[0], region[1], region[2], mid]
-                right_region = [region[0], region[1], mid, region[3]]
 
-            left_points = []
-            right_points = []
-            for pt in points:
-                x, y = pt[0], pt[1]
-                if split_dim == 0:
-                    if x < mid:
-                        left_points.append(pt)
-                    else:
-                        right_points.append(pt)
-                else:
-                    if y < mid:
-                        left_points.append(pt)
-                    else:
-                        right_points.append(pt)
-            privtree_split(left_points, left_region, depth + 1)
-            privtree_split(right_points, right_region, depth + 1)
+            bias = c_v - depth * delta
+            bias = max(bias,min_cell_points-delta)
+            noisy_bias = bias + np.random.laplace(scale=1.0 / privtree_epsilon)
 
+            if noisy_bias <= min_cell_points:
+                print(f"reach noisy_bias = {noisy_bias} < theta ")
+                leaf_regions.append(region)
+                return
+
+
+            # 四元樹切割
+            xmin, xmax, ymin, ymax = region
+            xmid = (xmin + xmax) / 2
+            ymid = (ymin + ymax) / 2
+            # 子區域: 左下, 右下, 左上, 右上
+            subregions = [
+                [xmin, xmid, ymin, ymid],
+                [xmid, xmax, ymin, ymid],
+                [xmin, xmid, ymid, ymax],
+                [xmid, xmax, ymid, ymax]
+            ]
+            # 針對每個子區域找內含點並遞迴
+            for subreg in subregions:
+                sub_points = [pt for pt in points if
+                              subreg[0] <= pt[0] < subreg[1] and subreg[2] <= pt[1] < subreg[3]]
+                privtree_split(sub_points, subreg, depth + 1)
         # ==== 主體：產生 leaf_regions ====
         privtree_split(all_points, region, 0)
 
