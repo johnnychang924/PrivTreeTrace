@@ -942,12 +942,13 @@ class Grid:
 
     def get_grid(self, trajectory_set1: TrajectorySet) -> None:
         """
-        Modified: Use PrivTree-style recursive adaptive grid instead of fixed two-level grid.
+        使用 PrivTree-style 遞迴 grid 分割，支援敏感區域 lambda 動態調整。
         """
         cc1 = self.cc
         total_epsilon = cc1.total_epsilon
         level1_epsilon_partition = cc1.epsilon_partition[0]
         level1_epsilon = total_epsilon * level1_epsilon_partition
+
         self.border(trajectory_set1)
         self.give_point_number(trajectory_set1)
 
@@ -955,39 +956,50 @@ class Grid:
         print("[DEBUG] first trajectory shape:", trajectory_set1.trajectory_list[0].trajectory_array.shape)
         all_points = np.vstack([tr.trajectory_array for tr in trajectory_set1.trajectory_list])
         print("[DEBUG] all_points shape:", all_points.shape)
-        # ===== PrivTree integration starts here =====
-        min_cell_points = getattr(self.cc, 'privtree_min_points', 500)  # or another param from config
+        min_cell_points = getattr(self.cc, 'privtree_min_points', 500)
         max_depth = getattr(self.cc, 'privtree_max_depth', 6)
-        privtree_epsilon = level1_epsilon / max_depth  # divide epsilon for each split step
+        privtree_epsilon = level1_epsilon / max_depth
         border = self.get_border('all')
         region = [border[2], border[3], border[1], border[0]]  # [xmin, xmax, ymin, ymax]
-        np.random.seed(42)  # for reproducibility
-        random_sensitive_indices = set(np.random.choice(1024, 8, replace=False))  # e.g. 64格挑8格敏感
-        def privtree_split(points, region, depth):
-            print(f"[DEBUG] privtree_split: depth={depth}, n_points={len(points)}, region={region}")
-            # 僅極端大區域才強制分割（如大於全體/8）
-            force_split_threshold = int(0.12 * all_points.shape[0])
 
+        # --- 隨機挑選敏感格子 index ---
+        np.random.seed(42)
+        guess_grid_num = 2 ** max_depth  # 例如 max_depth=6，約 64 個 leaf
+        sensitive_cnt = min(8, guess_grid_num)
+        random_sensitive_indices = set(np.random.choice(guess_grid_num, sensitive_cnt, replace=False))
+        # 若 leaf 數不足 guess_grid_num，沒關係只會少一點敏感格
+
+        leaf_regions = []  # 以閉包方式維護當前遞迴序列
+
+        def privtree_split(points, region, depth):
+            # region: [xmin, xmax, ymin, ymax]
+            # points: [N, 2]
+            nonlocal leaf_regions
+            print(f"[DEBUG] privtree_split: depth={depth}, n_points={len(points)}, region={region}")
+            force_split_threshold = int(0.12 * all_points.shape[0])
             if depth >= max_depth:
+                leaf_regions.append(region)
                 print(f"  [DEBUG] STOP: reach max_depth {max_depth}")
-                return [region]
+                return
             if len(points) <= min_cell_points:
+                leaf_regions.append(region)
                 print(f"  [DEBUG] STOP: n_points <= min_cell_points ({min_cell_points})")
-                return [region]
-            # 只對超級大區域強制分割，其餘用噪聲決策
+                return
+            # DP/noise 決策
             if len(points) > force_split_threshold:
                 print(f"  [DEBUG] FORCE split: n_points > force_split_threshold ({force_split_threshold})")
             else:
-                local_epsion = privtree_epsilon
                 region_index = len(leaf_regions)
+                local_epsilon = privtree_epsilon
+                # 敏感區高 epsilon（噪聲小，保障重要格子準確度）
                 if region_index in random_sensitive_indices:
-                    local_epsilon = privtree_epsilon * 5  # 給敏感區較高 epsilon（較小 noise）
-                noisy_count = len(points) + np.random.laplace(scale=1.0 / local_epsion)
+                    local_epsilon = privtree_epsilon * 5
+                noisy_count = len(points) + np.random.laplace(scale=1.0 / local_epsilon)
                 if noisy_count <= min_cell_points:
+                    leaf_regions.append(region)
                     print(f"  [DEBUG] STOP: noisy_count <= min_cell_points ({min_cell_points})")
-                    return [region]
-
-            # 用中位數切割（更自適應）
+                    return
+            # 遞迴中位數切割
             x_width = region[1] - region[0]
             y_width = region[3] - region[2]
             if x_width >= y_width:
@@ -1015,23 +1027,23 @@ class Grid:
                         left_points.append(pt)
                     else:
                         right_points.append(pt)
-            regions = []
-            regions.extend(privtree_split(left_points, left_region, depth + 1))
-            regions.extend(privtree_split(right_points, right_region, depth + 1))
-            return regions
+            privtree_split(left_points, left_region, depth + 1)
+            privtree_split(right_points, right_region, depth + 1)
 
+        # ==== 主體：產生 leaf_regions ====
+        privtree_split(all_points, region, 0)
 
-        # ===== 先產生 leaf_regions =====
-        leaf_regions = privtree_split(all_points, region, 0)
+        # ==== 屬性賦值、region to index ====
         self.privtree_leaf_regions = leaf_regions
         self.usable_state_number = len(leaf_regions)
         print("[DEBUG] leaf_regions len:", len(leaf_regions))
-        # Map trajectory points to states (leaf cells)
+
+        # 轉換格點到 index 查找
         def find_leaf_index(x, y):
             for idx, reg in enumerate(leaf_regions):
                 if reg[0] <= x < reg[1] and reg[2] <= y < reg[3]:
                     return idx
-            # Edge case: return last if not found
+            # 邊界錯誤時給最後一格
             return len(leaf_regions) - 1
 
         for tr in trajectory_set1.trajectory_list:
@@ -1039,21 +1051,20 @@ class Grid:
             tr.usable_sequence = np.array([find_leaf_index(x, y) for x, y in pts])
             tr.usable_simple_sequence = tr.usable_sequence
 
-        # 其餘屬性正確設定
-        self.subcell_number = self.usable_state_number
+        # 格子/鄰居等屬性設定（與前述一致）
         n = self.usable_state_number
+        self.subcell_number = n
         self.real_subcell_index_to_usable_index_dict = np.arange(n)
         self.usable_subcell_index_to_real_index_dict = np.arange(n)
         self.level2_subcell_to_large_cell_dict = np.arange(n)
         self.level2_subdividing_parameter = np.ones(n, dtype=int)
         self.level2_borders = np.array(self.privtree_leaf_regions)
-        self.usable_state_centers = np.array([
-            [(r[2] + r[3]) / 2, (r[0] + r[1]) / 2] for r in leaf_regions
-        ])
-        self.level1_cell_position = np.array([[i, 0] for i in range(n)])  # N x 2 dummy
+        self.usable_state_centers = np.array([[(r[2] + r[3]) / 2, (r[0] + r[1]) / 2] for r in leaf_regions])
+        self.level1_cell_position = np.array([[i, 0] for i in range(n)])
         self.level1_cell_number = n
-        # 如果有 neighbors，這裡加上
-        # self.compute_privtree_neighbors()
+
+        # 產生不規則格子的鄰居關係
+        self.compute_privtree_neighbors()
 
         # Debug: 印出 cell population
         import collections
