@@ -957,7 +957,7 @@ class Grid:
         all_points = np.vstack([tr.trajectory_array for tr in trajectory_set1.trajectory_list])
         print("[DEBUG] all_points shape:", all_points.shape)
         min_cell_points = getattr(self.cc, 'privtree_min_points', 500)
-        max_depth = getattr(self.cc, 'privtree_max_depth', 6)
+        max_depth = getattr(self.cc, 'privtree_max_depth', 10)
         privtree_epsilon = level1_epsilon / max_depth
         border = self.get_border('all')
         region = [border[2], border[3], border[1], border[0]]  # [xmin, xmax, ymin, ymax]
