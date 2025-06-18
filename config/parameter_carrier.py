@@ -5,8 +5,6 @@ class ParameterCarrier:
         self.total_epsilon = args['total_epsilon']
         self.epsilon_partition = args['epsilon_partition']
         self.trajectory_number_to_generate = args['trajectory_number_to_generate']
-        self.privtree_min_points = 10
-        self.privtree_max_depth = 10
 
 
 

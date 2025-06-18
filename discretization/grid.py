@@ -858,16 +858,6 @@ class Grid:
 
     #
     def usable_state_central_points(self):
-        # 如果有 privtree_leaf_regions，就走 PrivTree 路徑
-        if hasattr(self, 'privtree_leaf_regions'):
-            centers = []
-            for r in self.privtree_leaf_regions:
-                # [xmin, xmax, ymin, ymax]
-                xc = (r[0] + r[1]) / 2
-                yc = (r[2] + r[3]) / 2
-                centers.append([yc, xc])  # lat, lon
-            return np.array(centers)
-
         state_number = self.usable_state_number
         central_points_gps = np.zeros((state_number, 2)) - 1
         for usable_state_index in range(state_number):
@@ -941,131 +931,25 @@ class Grid:
         return in_border_states
 
     def get_grid(self, trajectory_set1: TrajectorySet) -> None:
-        """
-        Modified: Use PrivTree-style recursive adaptive grid instead of fixed two-level grid.
-        """
         cc1 = self.cc
         total_epsilon = cc1.total_epsilon
         level1_epsilon_partition = cc1.epsilon_partition[0]
         level1_epsilon = total_epsilon * level1_epsilon_partition
         self.border(trajectory_set1)
         self.give_point_number(trajectory_set1)
+        self.level1_divide()
+        self.level1_cells()
+        self.level1_trajectory_set_point_to_cell(trajectory_set1)
+        self.level1_density(trajectory_set1)
+        self.noisy_frequency(level1_epsilon)
+        self.subdividing()
 
-        # ===== PrivTree integration starts here =====
-        min_cell_points = getattr(self.cc, 'privtree_min_points', 10)  # or another param from config
-        max_depth = getattr(self.cc, 'privtree_max_depth', 10)
-        privtree_epsilon = level1_epsilon / max_depth  # divide epsilon for each split step
-        border = self.get_border('all')
-        region = [border[2], border[3], border[1], border[0]]  # [xmin, xmax, ymin, ymax]
-
-        def privtree_split(points, region, depth):
-            if depth >= max_depth:
-                return [region]
-            if len(points) <= min_cell_points:
-                return [region]
-            noisy_count = len(points) + np.random.laplace(scale=1.0/privtree_epsilon)
-            if noisy_count <= min_cell_points:
-                return [region]
-            # Find largest dimension to split
-            x_width = region[1] - region[0]
-            y_width = region[3] - region[2]
-            if x_width >= y_width:
-                split_dim = 0
-                mid = (region[0] + region[1]) / 2
-                left_region = [region[0], mid, region[2], region[3]]
-                right_region = [mid, region[1], region[2], region[3]]
-            else:
-                split_dim = 2
-                mid = (region[2] + region[3]) / 2
-                left_region = [region[0], region[1], region[2], mid]
-                right_region = [region[0], region[1], mid, region[3]]
-            # Split points
-            left_points = []
-            right_points = []
-            for pt in points:
-                x, y = pt[0], pt[1]
-                if split_dim == 0:
-                    if x < mid:
-                        left_points.append(pt)
-                    else:
-                        right_points.append(pt)
-                else:
-                    if y < mid:
-                        left_points.append(pt)
-                    else:
-                        right_points.append(pt)
-            regions = []
-            regions.extend(privtree_split(left_points, left_region, depth+1))
-            regions.extend(privtree_split(right_points, right_region, depth+1))
-            return regions
-
-        # Collect all points
-        all_points = np.vstack([tr.trajectory_array for tr in trajectory_set1.trajectory_list])
-        leaf_regions = privtree_split(all_points, region, 0)
-
-        # Convert leaf_regions to grid cells (replace level1_x/y_divide_bins, cell mapping, etc)
-        # Use bin centers as state representative for Markov model
-        self.privtree_leaf_regions = leaf_regions
-        self.usable_state_number = len(leaf_regions)
-        self.usable_state_centers = np.array([
-            [(r[2]+r[3])/2, (r[0]+r[1])/2] for r in leaf_regions
-        ])
-        self.level2_borders = np.array(self.privtree_leaf_regions)
-
-        # Map trajectory points to states (leaf cells)
-        def find_leaf_index(x, y):
-            for idx, reg in enumerate(leaf_regions):
-                if reg[0] <= x < reg[1] and reg[2] <= y < reg[3]:
-                    return idx
-            # Edge case: return last if not found
-            return len(leaf_regions)-1
-        for tr in trajectory_set1.trajectory_list:
-            pts = tr.trajectory_array
-            tr.usable_sequence = np.array([find_leaf_index(x, y) for x, y in pts])
-            tr.usable_simple_sequence = tr.usable_sequence
-        self.subcell_number = self.usable_state_number
-        n = self.usable_state_number
-        self.real_subcell_index_to_usable_index_dict = np.arange(n)
-        self.usable_subcell_index_to_real_index_dict = np.arange(n)
-        self.level2_subcell_to_large_cell_dict = np.arange(n)
-        self.level2_subdividing_parameter = np.ones(n, dtype=int)
-        n1 = self.usable_state_number
-        self.level1_cell_position = np.array([[i, 0] for i in range(n1)])  # N x 2 dummy
-        self.level1_cell_number = n1
-        self.compute_privtree_neighbors()
+        self.calculate_index_array_for_set(trajectory_set1)
 
     def set_up_state(self, trajectory_set1: TrajectorySet) -> None:
-        # self.get_non_noisy_level2_density(trajectory_set1)
-        # # self.get_noisy_level2_density()
-        # self.state_pruning()
-        # self.usable_array_of_set(trajectory_set1)
-        # self.construct_real_index_neighbors()
-        # self.construct_usable_index_neighbors()
-        pass
-
-    def compute_privtree_neighbors(self):
-        # 每個region如果有共邊界即視為neighbor
-        n = self.usable_state_number
-        neighbors = []
-        for i in range(n):
-            ni = []
-            ri = self.privtree_leaf_regions[i]
-            for j in range(n):
-                if i == j:
-                    continue
-                rj = self.privtree_leaf_regions[j]
-                # Check if regions share a boundary in 2D
-                # 假設 region 格式 [xmin, xmax, ymin, ymax]
-                share = False
-                # x邊界重疊，y區間touch
-                if (ri[0] == rj[1] or ri[1] == rj[0]) and not (ri[3]<=rj[2] or ri[2]>=rj[3]):
-                    share = True
-                # y邊界重疊，x區間touch
-                if (ri[2] == rj[3] or ri[3] == rj[2]) and not (ri[1]<=rj[0] or ri[0]>=rj[1]):
-                    share = True
-                if share:
-                    ni.append(j)
-            neighbors.append(np.array(ni, dtype=int))
-        self.subcell_neighbors_real_index = neighbors
-        # 若 downstream 需要 usable index，直接賦值
-        self.subcell_neighbors_usable_index = neighbors
+        self.get_non_noisy_level2_density(trajectory_set1)
+        # self.get_noisy_level2_density()
+        self.state_pruning()
+        self.usable_array_of_set(trajectory_set1)
+        self.construct_real_index_neighbors()
+        self.construct_usable_index_neighbors()

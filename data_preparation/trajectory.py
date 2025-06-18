@@ -69,27 +69,13 @@ class Trajectory:
         regularized_frequency = raw_frequency / point_number
         return regularized_frequency
 
-    def give_simple_trajectory(self, dict1):
-        # 優先用 usable_sequence，如果不存在才 fallback 舊欄位
-        if hasattr(self, 'usable_sequence') and self.usable_sequence is not None and len(self.usable_sequence) > 0:
-            sequence = self.usable_sequence
-        elif hasattr(self, 'level2_cell_index_array') and self.level2_cell_index_array is not None and len(self.level2_cell_index_array) > 0:
-            sequence = self.level2_cell_index_array
-        else:
-            # sequence 是空的直接返回
-            self.unrepeated_sequence = np.array([])
-            self.frequency = np.array([])
-            return
-        # dict1 仍然可能是 real_subcell_index_to_usable_index_dict，需做兼容
-        if dict1 is not None:
-            if isinstance(dict1, dict):
-                sequence = np.vectorize(lambda x: dict1.get(x, x))(sequence)
-            else:
-                # 直接 identity mapping，或直接不轉換
-                sequence = sequence.copy()
-        unrepeated_sequence, frequency = self.calculate_unrepeated_trajectory(sequence)
-        self.unrepeated_sequence = unrepeated_sequence
-        self.frequency = frequency
+    def give_simple_trajectory(self, dict1: np.ndarray):
+        level2_cell_index_array = self.level2_cell_index_sequence
+        unrepeated_sequence, frequency = self.calculate_unrepeated_trajectory(level2_cell_index_array)
+        unrepeated_usable_sequence = dict1[unrepeated_sequence]
+        self.cell_sequence = unrepeated_sequence
+        self.cell_sequence_frequency = frequency
+        self.usable_simple_sequence = unrepeated_usable_sequence
 
     def calculate_unrepeated_trajectory(self, sequence: np.ndarray):
         gt1 = GeneralTools()

@@ -58,9 +58,6 @@ class MarkovModel:
         trajectory_array = trajectory1.usable_simple_sequence
         markov_matrix = np.zeros((state_number, state_number))
         trajectory_length = trajectory_array.size
-        if trajectory_array is None or len(trajectory_array) == 0:
-            print("SKIP: empty trajectory_array in trajectory_markov_probability")
-            return np.zeros((state_number, state_number))  # 直接回傳零矩陣
         for markov_transform_start in range(trajectory_length - 1):
             this_step_start_state = trajectory_array[markov_transform_start]
             this_step_end_state = trajectory_array[markov_transform_start + 1]
@@ -68,11 +65,12 @@ class MarkovModel:
         transition_number_of_trajectory = trajectory_length + 1
         if transition_number_of_trajectory < 1:
             transition_number_of_trajectory = 1
+
         real_start_state = trajectory_array[0]
         real_end_state = trajectory_array[-1]
         markov_matrix[start_state, real_start_state] = 1
         markov_matrix[real_end_state, end_state] = 1
-
+        
         markov_matrix = markov_matrix / transition_number_of_trajectory
 
         return markov_matrix
@@ -201,7 +199,8 @@ class MarkovModel:
             index_of_gp = gp.this_state
             order1_end_value = self.noisy_markov_matrix[index_of_gp, -1]
             order2_end_value = gp.give_total_ends_value()
-            gp.multiply_ends(order1_end_value / order2_end_value * 1.5)
+            #gp.multiply_ends(order1_end_value / order2_end_value * 1.5)
+            gp.multiply_ends(1.5)
 
     #
     def start_end_trip_distribution_calibration(self):
@@ -296,11 +295,11 @@ class MarkovModel:
         subcell_end = usable_to_subcell[end_j]
         large_start = int(subcell_to_large_cell[subcell_start])
         large_end = int(subcell_to_large_cell[subcell_end])
-        position_start = grid.level1_cell_position[large_start, :]
-        position_end = grid.level1_cell_position[large_end, :]
-        distance = position_end - position_start
-        length = np.abs(distance[0]) + np.abs(distance[1]) + 1
-        return length
+        #position_start = grid.level1_cell_position[large_start, :]
+        #position_end = grid.level1_cell_position[large_end, :]
+        #distance = position_end - position_start
+        #length = np.abs(distance[0]) + np.abs(distance[1]) + 1
+        return np.abs(large_end - large_start)#length
 
     #
     def give_whole_length_thresholds(self):

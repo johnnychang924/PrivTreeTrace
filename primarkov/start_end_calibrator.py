@@ -104,10 +104,10 @@ class StartEndCalibrator:
                 usable_end_index = self.non_zero_end_indices[inner_end_index]
                 shortest_path = nx.dijkstra_path(self.distance_network, source=usable_start_index,
                                                  target=usable_end_index)
-                large_cell_path = grid.non_repeat_large_cell_array_from_usable(shortest_path)
+                #large_cell_path = grid.non_repeat_large_cell_array_from_usable(shortest_path)
                 self.inner_indices_shortest_path_lengths[inner_start_index, inner_end_index] = len(shortest_path)
-                self.inner_indices_shortest_large_cell_paths_lengths[inner_start_index, inner_end_index] = len(
-                    large_cell_path)
+                self.inner_indices_shortest_large_cell_paths_lengths[inner_start_index, inner_end_index] = len(shortest_path)
+                """len(large_cell_path)"""
         self.inner_indices_arithmetic_mean_length = np.empty(self.inner_indices_shortest_path_lengths.shape)
         for i in range(self.inner_indices_shortest_path_lengths.shape[0]):
             for j in range(self.inner_indices_shortest_path_lengths.shape[1]):

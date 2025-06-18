@@ -20,7 +20,7 @@ class Generator:
         self.markov_model = MarkovModel(self.cc)
         self.average_length = -1
         self.level1_length_threshold_value = -1
-        self.average_subdividing_number = 1  #privtree didn't use
+        self.average_subdividing_number = -1
         self.simple_level2_length_threshold_value = -1
         self.total_in_degree = np.array([])
         self.total_out_degree = np.array([])
@@ -143,20 +143,12 @@ class Generator:
         self.level1_length_threshold_value = threshold
 
     def simple_whole_trajectory_len_threshold(self, level1_len_threshold):
+        # grid = self.markov_model.grid
         average_subdividing_number = self.average_subdividing_number
-
-        # 防呆：level1_len_threshold、average_subdividing_number 只要一個為 nan/inf，就給預設值
-        if np.isnan(level1_len_threshold) or np.isinf(level1_len_threshold):
-            print("WARNING: level1_len_threshold is NaN or inf, using default value 1")
-            level1_len_threshold = 1
-
-        if np.isnan(average_subdividing_number) or np.isinf(average_subdividing_number):
-            print("WARNING: average_subdividing_number is NaN or inf, using default value 1")
-            average_subdividing_number = 1
-
+        # whole_threshold = int(np.ceil(average_subdividing_number)) * 1.5
         whole_threshold = int(np.ceil(average_subdividing_number))
         if whole_threshold < level1_len_threshold:
-            whole_threshold = int(np.ceil(level1_len_threshold))
+            whole_threshold = level1_len_threshold
         self.simple_level2_length_threshold_value = whole_threshold
 
     #
@@ -370,65 +362,23 @@ class Generator:
         return end
 
     def generate_many(self, number, neighbor_check=False):
-        import datetime
         trajectory_list = []
-        max_attempts_per_traj = 1000  # 每條軌跡最多嘗試 1000 次
-        total_success = 0
-        total_fail = 0
-
         if neighbor_check:
             trajectory_number_already = 0
             while trajectory_number_already < number:
-                print(f"[generate_many][NeighborMode] generating {trajectory_number_already + 1}/{number} ...")
-                t0 = datetime.datetime.now()
-                for attempt in range(max_attempts_per_traj):
-                    print(f"  [generate_many] attempt {attempt + 1}/{max_attempts_per_traj}")
-                    trajectory = self.generate_trajectory(neighbor_check=True)
-                    if trajectory is not False and trajectory is not None:
-                        duration = (datetime.datetime.now() - t0).total_seconds()
-                        print(f"  [generate_many] SUCCESS: len={len(trajectory)}, time={duration:.2f}s")
-                        trajectory_list.append(trajectory)
-                        trajectory_number_already += 1
-                        total_success += 1
-                        break
-                    else:
-                        print(f"  [generate_many] FAILED generating trajectory, retry...")
-                        total_fail += 1
-                else:
-                    print(
-                        f"[generate_many] WARNING: Gave up on {trajectory_number_already + 1}/{number} after {max_attempts_per_traj} attempts")
-                    trajectory_number_already += 1  # 跳下一條
-
+                trajectory = self.generate_trajectory(neighbor_check=True)
+                if trajectory is not False:
+                    trajectory_list.append(trajectory)
+                    trajectory_number_already = trajectory_number_already + 1
         else:
             i = 1
             print('begin generating')
             print(datetime.datetime.now())
             while i < number + 1:
-                print(f"[generate_many] generating {i}/{number}")
-                t0 = datetime.datetime.now()
-                for attempt in range(max_attempts_per_traj):
-                    print(f"  [generate_many] attempt {attempt + 1}/{max_attempts_per_traj}")
-                    trajectory = self.generate_trajectory()
-                    if trajectory is not False and trajectory is not None:
-                        duration = (datetime.datetime.now() - t0).total_seconds()
-                        print(f"  [generate_many] SUCCESS: len={len(trajectory)}, time={duration:.2f}s")
-                        trajectory_list.append(trajectory)
-                        i += 1
-                        total_success += 1
-                        break
-                    else:
-                        print(f"  [generate_many] FAILED generating trajectory, retry...")
-                        total_fail += 1
-                else:
-                    print(f"[generate_many] WARNING: Gave up on {i}/{number} after {max_attempts_per_traj} attempts")
-                    i += 1  # 跳下一條
-
+                trajectory = self.generate_trajectory(neighbor_check)
+                if trajectory is not False:
+                    trajectory_list.append(trajectory)
+                    i = i + 1
             print('end generating')
             print(datetime.datetime.now())
-
-        # 最後只保留有效（非 False/None）的
-        filtered_trajectories = [tr for tr in trajectory_list if tr is not False and tr is not None]
-        print(f"[generate_many] FINISHED. Success: {len(filtered_trajectories)}, Fail: {total_fail}")
-        return filtered_trajectories
-
-
+        return trajectory_list

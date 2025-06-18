@@ -10,6 +10,8 @@ from tools.data_writer import DataWriter
 from data_preparation.data_preparer import DataPreparer
 import datetime
 
+from discretization.privtree import PrivTree
+
 if __name__ == "__main__":
     writer = DataWriter()
     print('begin all')
@@ -18,10 +20,17 @@ if __name__ == "__main__":
     pc = ParameterCarrier(par)
     data_preparer = DataPreparer(par)
     trajectory_set = data_preparer.get_trajectory_set()
-    disdata1 = DisData(pc)
-    grid = disdata1.get_discrete_data(trajectory_set)
+    #disdata1 = DisData(pc)
+    #grid = disdata1.get_discrete_data(trajectory_set)
+    grid = PrivTree(pc)
+    grid.build_tree(trajectory_set)
+    #grid.draw_heatmap()
+    grid.draw_graph(trajectory_set)
+    trajectory_set.get_simple_trajectory(grid.real_subcell_index_to_usable_index_dict)
+    print("Running Markov. Good Luck!!")
     mb1 = ModelBuilder(pc)
     mo1 = mb1.build_model(grid, trajectory_set)
+    #breakpoint()
     mb1 = ModelBuilder(pc)
     mo1 = mb1.filter_model(trajectory_set, grid, mo1)
     sg1 = StateGeneration(pc)
